@@ -3,7 +3,7 @@
 Copyright Luke Mondy, 2018
 
 This file is covered by GNU General Public License v3.0
-Please see the bundled LICENSE file for the full license.
+Please see: https://choosealicense.com/licenses/gpl-3.0/ for the full license
 
 """
 
@@ -12,20 +12,21 @@ import UWGeodynamics as GEO
 import underworld as uw
 import underworld.function as fn
 from UWGeodynamics.surfaceProcesses import SedimentationThreshold
-import numpy as numpy
+import numpy
+import os.path
 
 
 u = GEO.UnitRegistry
 GEO.rcParams['solver'] = "mumps"
 GEO.rcParams["initial.nonlinear.tolerance"] = 1e-3
 GEO.rcParams["nonlinear.tolerance"] =         1e-3
-GEO.rcParams["nonlinear.min.iterations"] = 2
+GEO.rcParams["nonlinear.min.iterations"] = 1
 GEO.rcParams["penalty"] = 0
-#GEO.rcParams["CFL"] = 0.25
-GEO.rcParams["CFL"] = 0.5
+GEO.rcParams["CFL"] = 0.25
+#GEO.rcParams["CFL"] = 0.5
 
 GEO.rcParams["advection.diffusion.method"] = "SLCN"
-GEO.rcParams["shearHeating"] = True
+GEO.rcParams["shear.heating"] = True
 GEO.rcParams["surface.pressure.normalization"] = True  # Make sure the top of the model is approximately 0 Pa
 
 GEO.rcParams["swarm.particles.per.cell.2D"] = 60
@@ -34,15 +35,13 @@ GEO.rcParams["popcontrol.max.splits"] = 100
 GEO.rcParams["popcontrol.particles.per.cell.2D"] = 60
 
 resolution = (608,192)
+name = "thermalSag2"
 #resolution = (298,96)
-#resolution = (304,96)
+resolution = (304,95)
 #resolution = (152,48)
+output_dir = "lmr_res{}x{}_{}".format(resolution[0], resolution[1], name)
 
 
-Model = GEO.Model(elementRes=resolution,
-                  minCoord=(-300 * u.kilometer, -180 * u.kilometer),
-                  maxCoord=( 300 * u.kilometer,  20 * u.kilometer))
-GEO.rcParams["output.directory"] = "lmr_res{}x{}_latest".format(resolution[0], resolution[1] )
  
 
 # Characteristic values of the system
@@ -65,24 +64,13 @@ GEO.scaling_coefficients["[mass]"]= KM
 GEO.scaling_coefficients["[temperature]"] = KT
 
 
-
-def post_hook():
-    """
-    Stop any brittle yielding near the edges of the model
-    """
-    coords = fn.input()
-    zz = (coords[0] - GEO.nd(Model.minCoord[0])) / (GEO.nd(Model.maxCoord[0]) - GEO.nd(Model.minCoord[0]))
-    fact = fn.math.pow(fn.math.tanh(zz*20.0) + fn.math.tanh((1.0-zz)*20.0) - fn.math.tanh(20.0), 4)
-    Model.plasticStrain.data[:] = Model.plasticStrain.data[:] * fact.evaluate(Model.swarm)
-Model.postSolveHook = post_hook
+Model = GEO.Model(elementRes=resolution,
+                  minCoord=(-300 * u.kilometer, -180 * u.kilometer),
+                  maxCoord=( 300 * u.kilometer,  20 * u.kilometer),
+                  gravity = (0., -9.81 * u.m / u.s**2),
+                  outputDir = output_dir)
 
 
-
-
-"""
-====================================
-Rheologies
-"""
 
 Model.diffusivity = 1e-6 * u.metre**2 / u.second 
 Model.capacity    = 1000. * u.joule / (u.kelvin * u.kilogram)
@@ -130,56 +118,43 @@ astheno.radiogenicHeatProd = mantle.radiogenicHeatProd
 
 rh = GEO.ViscousCreepRegistry()
 air.viscosity         = 1e18 * u.pascal * u.second
-sediment.viscosity   = rh.Paterson_et_al_1990
-uc.viscosity         = rh.Paterson_et_al_1990
-#lc.viscosity         = fixed_wang
-lc.viscosity         = rh.Wang_et_al_2012
-#mantle.viscosity     = fixed_hirth
-mantle.viscosity     = rh.Hirth_et_al_2003
+sediment.viscosity    = rh.Wet_Quartz_Dislocation_Paterson_and_Luan_1990
+uc.viscosity         = rh.Wet_Quartz_Dislocation_Paterson_and_Luan_1990
+lc.viscosity         = rh.Dry_Mafic_Granulite_Dislocation_Wang_et_al_2012
+mantle.viscosity     = rh.Wet_Olivine_Dislocation_Hirth_and_Kohlstedt_2003
 uc_markers.viscosity = uc.viscosity
 astheno.viscosity     = mantle.viscosity
  
 
 pl = GEO.PlasticityRegistry()
-"""
-uc.plasticity         = pl.Huismans_et_al_2011_Crust
-uc.plasticity.cohesionAfterSoftening = 2 * u.megapascal
-uc.plasticity.epsilon1 = 0.
-uc.plasticity.epsilon2 = 0.2
-"""
 uc.plasticity = pl.Rey_and_Muller_2010_UpperCrust
 uc.plasticity.frictionCoefficient = 0.12
 uc.plasticity.frictionAfterSoftening = 0.02
-uc_markers.plasticity         = uc.plasticity
+uc_markers.plasticity = uc.plasticity
 sediment.plasticity   = pl.Rey_et_al_2014_UpperCrust
 lc.plasticity         = pl.Rey_et_al_2014_LowerCrust
 mantle.plasticity     = pl.Rey_et_al_2014_LithosphericMantle
-astheno.plasticity     = mantle.plasticity
+astheno.plasticity    = mantle.plasticity
 
-uc.minViscosity = 1e19 * u.pascal * u.second
-uc.maxViscosity = 1e23 * u.pascal * u.second
-sediment.minViscosity = 1e19 * u.pascal * u.second
-sediment.maxViscosity = 1e23 * u.pascal * u.second
+uc.minViscosity         = 1e19 * u.pascal * u.second
+uc.maxViscosity         = 1e23 * u.pascal * u.second
+sediment.minViscosity   = 1e19 * u.pascal * u.second
+sediment.maxViscosity   = 1e23 * u.pascal * u.second
 uc_markers.minViscosity = 1e19 * u.pascal * u.second
 uc_markers.maxViscosity = 1e23 * u.pascal * u.second
-lc.minViscosity = 1e19 * u.pascal * u.second
-lc.maxViscosity = 1e23 * u.pascal * u.second
-mantle.minViscosity = 1e19 * u.pascal * u.second
-mantle.maxViscosity = 1e23 * u.pascal * u.second
-astheno.minViscosity = 1e19 * u.pascal * u.second
-astheno.maxViscosity = 1e23 * u.pascal * u.second
+lc.minViscosity         = 1e19 * u.pascal * u.second
+lc.maxViscosity         = 1e23 * u.pascal * u.second
+mantle.minViscosity     = 1e19 * u.pascal * u.second
+mantle.maxViscosity     = 1e23 * u.pascal * u.second
+astheno.minViscosity    = 1e19 * u.pascal * u.second
+astheno.maxViscosity    = 1e23 * u.pascal * u.second
 
-uc.stressLimiter = 150 * u.megapascals
-uc_markers.stressLimiter = uc.stressLimiter
-lc.stressLimiter = 150 * u.megapascals
+uc.stressLimiter       = 150 * u.megapascals
+lc.stressLimiter       = 150 * u.megapascals
 sediment.stressLimiter = 150 * u.megapascals
-mantle.stressLimiter = 300 * u.megapascals
-astheno.stressLimiter = mantle.stressLimiter
-
-"""
-Rheologies
-====================================
-"""
+mantle.stressLimiter   = 300 * u.megapascals
+uc_markers.stressLimiter = uc.stressLimiter
+astheno.stressLimiter    = mantle.stressLimiter
 
 """
 ====================================
@@ -293,7 +268,12 @@ Passive tracers
 
 """
 ====================================
-Random damage
+Initial conditions
+"""
+
+"""
+====================================
+  Random damage
 """
 def gaussian(xx, centre, width):
     return ( numpy.exp( -(xx - centre)**2 / width ))
@@ -306,15 +286,10 @@ Model.plasticStrain.data[:,0] *= gaussian(Model.swarm.particleCoordinates.data[:
 crust_mask =Model.swarm.particleCoordinates.data[:,1] <= GEO.nd(-40 * u.kilometer)
 Model.plasticStrain.data[crust_mask] = 0.0
 """
-Random damage
+  Random damage
 ====================================
 """
 
-
-"""
-====================================
-Initial conditions
-"""
 air_mask = air_shape.fn.evaluate(Model.mesh.data)
 air_nodes = Model.mesh.data_nodegId[air_mask].ravel()
 astheno_mask = astheno_shape.fn.evaluate(Model.mesh.data)
@@ -358,22 +333,64 @@ P, bottomPress = Model.get_lithostatic_pressureField()
 
 # Get the average of the pressure along the bottom, and make it a pressure BC along the bottom
 bottomPress = GEO.Dimensionalize(numpy.average(bottomPress), u.megapascal)
+print("Initially calculated bottom pressure:", bottomPress)
 
-print(bottomPress)
+# Restarting models with pressure boundary conditions can be a bit dangerous. To avoid this,
+# we write out the bottom pressure to a file. When the model restarts, we check the file, and 
+# use the pressure it has, instead of calculating our own.
+pressureBC_file = "./pressureBC_{}.dat".format(output_dir)
+if os.path.isfile(pressureBC_file):
+    # If a file with the bottom pressure already exists, read from it.
+    with open(pressureBC_file, 'r') as f:
+        restart_pressure = numpy.float64(f.readline().strip())
+    bottomPress = restart_pressure * u.megapascal
+    print("Loaded bottom pressure BC from file:", bottomPress)
+else:
+    # If no existing pressure is around, write the pressure we calculated to the file
+    if uw.rank() == 0:
+        with open(pressureBC_file, 'w') as f:
+            f.write("{:.12f}".format(bottomPress.magnitude))
+        print("Saved bottom pressure BC to file")
 
-# In[15]:
 
 Model.set_velocityBCs(
-                      left=[-1.0 * u.centimetre / u.year, 0. * u.centimetre / u.year], 
-                      right=[1.0 * u.centimetre / u.year, 0. * u.centimetre / u.year], 
-                      #top=[0. * u.centimetre / u.year, 0. * u.centimetre / u.year], 
-                      top=[None, 0. * u.centimetre / u.year], 
-                      bottom=[None, bottomPress])
+                      left  = [-2.0 * u.centimetre / u.year, 0. * u.centimetre / u.year], 
+                      right = [2.0 * u.centimetre / u.year,  0. * u.centimetre / u.year], 
+                      top   = [None,                         0. * u.centimetre / u.year],)
 
-#threshold_through_time = fn.branching.conditional([ ( Model.time < 12.5 * u.megayears, -1 * u.kilometer),
-#                                                    (                            True, -100 * u.kilometer)])
-#Model.surfaceProcesses = GEO.surfaceProcesses.SedimentationThreshold(air=[air], sediment=[sediment], threshold=threshold_through_time)
-Model.surfaceProcesses = GEO.surfaceProcesses.SedimentationThreshold(air=[air], sediment=[sediment], threshold=-1*u.kilometer)
+Model.set_stressBCs(bottom=[0., bottomPress])
+
+
+def post_hook():
+    """
+    Stop any brittle yielding near the edges of the model
+    """
+    coords = fn.input()
+    zz = (coords[0] - GEO.nd(Model.minCoord[0])) / (GEO.nd(Model.maxCoord[0]) - GEO.nd(Model.minCoord[0]))
+    fact = fn.math.pow(fn.math.tanh(zz*20.0) + fn.math.tanh((1.0-zz)*20.0) - fn.math.tanh(20.0), 4)
+    Model.plasticStrain.data[:] = Model.plasticStrain.data[:] * fact.evaluate(Model.swarm)
+
+    """
+    Check timing for when sedimentation should turn off
+    """
+    if Model.time > 12.5 * u.megayears:
+        threshold = -10 * u.kilometers
+        velocity = 0. * u.centimetre / u.year
+    else:
+        threshold = -1 * u.kilometers
+        velocity = 2. * u.centimetre / u.year
+
+    Model.surfaceProcesses = GEO.surfaceProcesses.SedimentationThreshold(air=[air], sediment=[sediment], threshold=threshold)
+
+    Model.set_velocityBCs(
+                          left  = [-1 * velocity, 0. * u.centimetre / u.year], 
+                          right = [velocity,      0. * u.centimetre / u.year], 
+                          top   = [None,          0. * u.centimetre / u.year],)
+
+
+Model.postSolveHook = post_hook
+
+
 """
 Boundary conditions
 ====================================
@@ -384,7 +401,7 @@ print(GEO.rcParams["default.outputs"])
 
 
 # This is a bunch of solver options. You can try playing with them, but these should be good enough.
-Model.solver = Model.stokes_solver()
+Model.solver = Model.get_stokes_solver()
 Model.solver.options.A11.ksp_rtol=1e-6
 Model.solver.options.scr.ksp_rtol=1e-6
 Model.solver.options.scr.use_previous_guess = True
@@ -393,18 +410,9 @@ Model.solver.options.scr.ksp_type = "cg"
 Model.solver.options.main.remove_constant_pressure_null_space=True
 #Model.solver.options.main.Q22_pc_type='uwscale'
 
-# Do an initial solve, with no timestepping, so that the first checkpoint actually has good info in it.
-"""
-try:
-    Model.restart(-1, GEO.rcParams["output.directory"])
-except Exception as e:
-    print(e)
 #Model.solve()
-"""
-#import shutil
-#shutil.copy2(__file__, GEO.rcParams["output.directory"])
-
-Model.run_for(20e6* u.year, restartStep = None, checkpoint_interval=500e3*u.years)
+#Model.run_for(10.0e6* u.year, dt=10e3 * u.year, checkpoint_interval=100e3*u.years)
+Model.run_for(100.0e6* u.year, restartStep=-1, dt=10e3 * u.year, checkpoint_interval=100e3*u.years)
 
 
 
