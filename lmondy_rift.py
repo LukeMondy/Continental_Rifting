@@ -290,16 +290,10 @@ Model.plasticStrain.data[crust_mask] = 0.0
 ====================================
 """
 
-air_mask = air_shape.fn.evaluate(Model.mesh.data)
-air_nodes = Model.mesh.data_nodegId[air_mask].ravel()
-astheno_mask = astheno_shape.fn.evaluate(Model.mesh.data)
-astheno_nodes = Model.mesh.data_nodegId[astheno_mask].ravel()
-
-
 # Temp initial conditions
 Model.set_temperatureBCs(top=293.15 * u.degK, 
                          bottom=1603.15 * u.degK, 
-                         nodeSets = [(air_nodes, 293.15 * u.degK), (astheno_nodes, 1603.15 * u.degK)])
+                         nodeSets = [(air_shape, 293.15 * u.degK), (astheno_shape, 1603.15 * u.degK)])
 
 # We need to initialise the model first for two reasons:
 # 1: we need to calculate the steady-state geotherm, based on the above initial conditions
