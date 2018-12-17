@@ -14,14 +14,12 @@ import underworld.function as fn
 from UWGeodynamics.surfaceProcesses import SedimentationThreshold
 import numpy
 import os.path
-
+from mpi4py import MPI
 
 u = GEO.UnitRegistry
-GEO.rcParams['solver'] = "mumps"
 GEO.rcParams["initial.nonlinear.tolerance"] = 1e-3
 GEO.rcParams["nonlinear.tolerance"] =         1e-3
 GEO.rcParams["nonlinear.min.iterations"] = 1
-GEO.rcParams["penalty"] = 0
 GEO.rcParams["CFL"] = 0.25
 #GEO.rcParams["CFL"] = 0.5
 
@@ -35,9 +33,9 @@ GEO.rcParams["popcontrol.max.splits"] = 100
 GEO.rcParams["popcontrol.particles.per.cell.2D"] = 60
 
 resolution = (608,192)
-name = "thermalSag2"
+name = "roofed"
 #resolution = (298,96)
-resolution = (304,95)
+resolution = (304,96)
 #resolution = (152,48)
 output_dir = "lmr_res{}x{}_{}".format(resolution[0], resolution[1], name)
 
@@ -326,31 +324,37 @@ P, bottomPress = Model.get_lithostatic_pressureField()
 
 
 # Get the average of the pressure along the bottom, and make it a pressure BC along the bottom
-bottomPress = GEO.Dimensionalize(numpy.average(bottomPress), u.megapascal)
+bottomPress = GEO.Dimensionalize(numpy.average(bottomPress), u.megapascal).magnitude
 print("Initially calculated bottom pressure:", bottomPress)
 
 # Restarting models with pressure boundary conditions can be a bit dangerous. To avoid this,
 # we write out the bottom pressure to a file. When the model restarts, we check the file, and 
 # use the pressure it has, instead of calculating our own.
 pressureBC_file = "./pressureBC_{}.dat".format(output_dir)
-if os.path.isfile(pressureBC_file):
-    # If a file with the bottom pressure already exists, read from it.
-    with open(pressureBC_file, 'r') as f:
-        restart_pressure = numpy.float64(f.readline().strip())
-    bottomPress = restart_pressure * u.megapascal
-    print("Loaded bottom pressure BC from file:", bottomPress)
-else:
-    # If no existing pressure is around, write the pressure we calculated to the file
-    if uw.rank() == 0:
+if uw.rank() == 0:
+    if os.path.isfile(pressureBC_file):
+        # If a file with the bottom pressure already exists, read from it.
+        with open(pressureBC_file, 'r') as f:
+            bottomPress = numpy.float64(f.readline().strip())
+        print("Loaded bottom pressure BC from file: ", bottomPress)
+    else:
+        # If no existing pressure is around, write the pressure we calculated to the file
         with open(pressureBC_file, 'w') as f:
-            f.write("{:.12f}".format(bottomPress.magnitude))
+            f.write("{:.12f}".format(bottomPress))
         print("Saved bottom pressure BC to file")
+else:
+    bottomPress = None
 
+# since only 1 CPU got the file, send it out to all CPUs
+bottomPress = MPI.COMM_WORLD.bcast(bottomPress, root=0)
+uw.barrier()  # wait for them to catchup
+bottomPress = bottomPress * u.megapascal  # then make it a unit
 
 Model.set_velocityBCs(
                       left  = [-2.0 * u.centimetre / u.year, 0. * u.centimetre / u.year], 
                       right = [2.0 * u.centimetre / u.year,  0. * u.centimetre / u.year], 
-                      top   = [None,                         0. * u.centimetre / u.year],)
+                      top   = [None,                         0. * u.centimetre / u.year],
+                      )
 
 Model.set_stressBCs(bottom=[0., bottomPress])
 
@@ -379,7 +383,8 @@ def post_hook():
     Model.set_velocityBCs(
                           left  = [-1 * velocity, 0. * u.centimetre / u.year], 
                           right = [velocity,      0. * u.centimetre / u.year], 
-                          top   = [None,          0. * u.centimetre / u.year],)
+                          top   = [None,          0. * u.centimetre / u.year],
+                          )
 
 
 Model.postSolveHook = post_hook
@@ -395,18 +400,20 @@ print(GEO.rcParams["default.outputs"])
 
 
 # This is a bunch of solver options. You can try playing with them, but these should be good enough.
-Model.solver = Model.get_stokes_solver()
-Model.solver.options.A11.ksp_rtol=1e-6
-Model.solver.options.scr.ksp_rtol=1e-6
-Model.solver.options.scr.use_previous_guess = True
-Model.solver.options.scr.ksp_set_min_it_converge = 10
-Model.solver.options.scr.ksp_type = "cg"
-Model.solver.options.main.remove_constant_pressure_null_space=True
+solver = Model.solver
+solver.options.A11.ksp_rtol=1e-8
+solver.options.scr.ksp_rtol=1e-8
+solver.options.scr.use_previous_guess = True
+solver.options.scr.ksp_set_min_it_converge = 10
+solver.options.scr.ksp_type = "cg"
+solver.options.main.remove_constant_pressure_null_space=True
+solver.set_inner_method("mumps")
+solver.set_penalty(0)
 #Model.solver.options.main.Q22_pc_type='uwscale'
 
 #Model.solve()
 #Model.run_for(10.0e6* u.year, dt=10e3 * u.year, checkpoint_interval=100e3*u.years)
-Model.run_for(100.0e6* u.year, restartStep=-1, dt=10e3 * u.year, checkpoint_interval=100e3*u.years)
+Model.run_for(5.0e6* u.year, restartStep=-1, checkpoint_interval=100e3*u.years)
 
 
 
