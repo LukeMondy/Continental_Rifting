@@ -15,6 +15,18 @@ from UWGeodynamics.surfaceProcesses import SedimentationThreshold
 import numpy
 import os.path
 from mpi4py import MPI
+import argparse
+
+def setup_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--res_scale", action='store', default = 1.)
+    parser.add_argument("--total_vel", action="store", required = True)
+    parser.add_argument("--time_to_stop", action="store", required = True)
+    parser.add_argument("--total_time", action="store", required = True)
+    parser.add_argument("--name", action="store", required = True)
+
+    return parser.parse_args()
+
 
 u = GEO.UnitRegistry
 GEO.rcParams["initial.nonlinear.tolerance"] = 1e-3
@@ -32,15 +44,27 @@ GEO.rcParams["popcontrol.split.threshold"] = 0.95
 GEO.rcParams["popcontrol.max.splits"] = 100
 GEO.rcParams["popcontrol.particles.per.cell.2D"] = 60
 
-resolution = (608,192)
-name = "roofed"
-#resolution = (298,96)
-resolution = (304,96)
-#resolution = (152,48)
-output_dir = "lmr_res{}x{}_{}".format(resolution[0], resolution[1], name)
+parser = vars(setup_args())
+
+res_scale =    float(parser['res_scale'])
+total_vel =    float(parser["total_vel"]) * u.cm / u.year
+time_to_stop = float(parser["time_to_stop"]) * 1e6 * u.year
+total_time =   float(parser["total_time"]) * 1e6 * u.year
+name =               parser['name']
+
+default_resolution = (608,192)
+resolution = tuple(map(lambda x: int(x * res_scale), default_resolution))
 
 
- 
+output_dir = "lmr_res{}x{}_{}_totalvel-{}_timeST_{}_{}".format(
+        resolution[0], 
+        resolution[1], 
+        name,
+        total_vel.magnitude,
+        time_to_stop.magnitude,
+        total_time.magnitude)
+
+
 
 # Characteristic values of the system
 half_rate = 1. * u.centimeter / u.year
@@ -350,9 +374,10 @@ bottomPress = MPI.COMM_WORLD.bcast(bottomPress, root=0)
 uw.barrier()  # wait for them to catchup
 bottomPress = bottomPress * u.megapascal  # then make it a unit
 
+
 Model.set_velocityBCs(
-                      left  = [-2.0 * u.centimetre / u.year, 0. * u.centimetre / u.year], 
-                      right = [2.0 * u.centimetre / u.year,  0. * u.centimetre / u.year], 
+                      left  = [total_vel * -0.5, 0. * u.centimetre / u.year], 
+                      right = [total_vel * 0.5,  0. * u.centimetre / u.year], 
                       top   = [None,                         0. * u.centimetre / u.year],
                       )
 
@@ -371,12 +396,12 @@ def post_hook():
     """
     Check timing for when sedimentation should turn off
     """
-    if Model.time > 12.5 * u.megayears:
+    if Model.time > time_to_stop:
         threshold = -10 * u.kilometers
         velocity = 0. * u.centimetre / u.year
     else:
         threshold = -1 * u.kilometers
-        velocity = 2. * u.centimetre / u.year
+        velocity = total_vel / 2.
 
     Model.surfaceProcesses = GEO.surfaceProcesses.SedimentationThreshold(air=[air], sediment=[sediment], threshold=threshold)
 
@@ -413,7 +438,7 @@ solver.set_penalty(0)
 
 #Model.solve()
 #Model.run_for(10.0e6* u.year, dt=10e3 * u.year, checkpoint_interval=100e3*u.years)
-Model.run_for(5.0e6* u.year, restartStep=-1, checkpoint_interval=100e3*u.years)
+Model.run_for(total_time, restartStep=-1, checkpoint_interval=100e3*u.years)
 
 
 
