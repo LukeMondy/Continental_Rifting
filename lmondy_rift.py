@@ -55,6 +55,8 @@ name =               parser['name']
 default_resolution = (608,192)
 resolution = tuple(map(lambda x: int(x * res_scale), default_resolution))
 
+default_checkpoint = 200e3 * u.years
+checkpoint_interval = default_checkpoint / total_vel.magnitude
 
 output_dir = "lmr_res{}x{}_{}_totalvel-{}_timeST_{}_{}".format(
         resolution[0], 
@@ -95,12 +97,12 @@ Model = GEO.Model(elementRes=resolution,
 
 
 Model.diffusivity = 1e-6 * u.metre**2 / u.second 
-Model.capacity    = 1000. * u.joule / (u.kelvin * u.kilogram)
+Model.capacity    = 1000. * u.joule / (u.kelvin * u.kilogram)  # From:
 
 air_shape         = GEO.shapes.Layer2D(top = Model.top,         bottom = 0.0)
 uc_shape          = GEO.shapes.Layer2D(top = 0.0 * u.kilometer, bottom = -20*u.kilometer)
 uc_markers_shape  = GEO.shapes.Layer2D(top = -5.*u.kilometer,   bottom = -10*u.kilometer)
-#lc_shape         = GEO.shapes.MultiShape([GEO.shapes.Layer2D(top=uc.bottom, bottom=-40*u.kilometer), GEO.shapes.Box(minX=-5.*u.kilometer, maxX=5. * u.kilometer, top=-40*u.kilometer, bottom=-40*u.kilometer-10.*u.kilometer)])
+#lc_shape         = GEO.shapes.MultiShape([GEO.shapes.Layer2D(top=-20*u.km, bottom=-40*u.kilometer), GEO.shapes.Box(minX=-5.*u.kilometer, maxX=5. * u.kilometer, top=-40*u.kilometer, bottom=-40*u.kilometer-10.*u.kilometer)])
 lc_shape          = GEO.shapes.Layer2D(top=-20*u.kilometer,     bottom=-40*u.kilometer)
 mantle_shape      = GEO.shapes.Layer2D(top=-40*u.kilometer,     bottom=-160*u.kilometer)
 astheno_shape     = GEO.shapes.Layer2D(top=-160*u.kilometer,    bottom=Model.bottom)
@@ -130,11 +132,11 @@ mantle.density   = GEO.LinearDensity(reference_density=3370. * u.kilogram / u.me
 astheno.density   = mantle.density
 
 
-sediment.radiogenicHeatProd   = 0.7 * u.microwatt / u.meter**3
-uc.radiogenicHeatProd = 0.7 * u.microwatt / u.meter**3
+sediment.radiogenicHeatProd   = 1.4 * u.microwatt / u.meter**3
+uc.radiogenicHeatProd         = 1.4 * u.microwatt / u.meter**3
+lc.radiogenicHeatProd         = 0.6 * u.microwatt / u.meter**3
+mantle.radiogenicHeatProd     = 0.02 * u.microwatt / u.meter**3
 uc_markers.radiogenicHeatProd = uc.radiogenicHeatProd
-lc.radiogenicHeatProd = 0.4 * u.microwatt / u.meter**3
-mantle.radiogenicHeatProd = 0.02 * u.microwatt / u.meter**3
 astheno.radiogenicHeatProd = mantle.radiogenicHeatProd
 
 
@@ -142,18 +144,18 @@ rh = GEO.ViscousCreepRegistry()
 air.viscosity         = 1e18 * u.pascal * u.second
 sediment.viscosity    = rh.Wet_Quartz_Dislocation_Paterson_and_Luan_1990
 uc.viscosity         = rh.Wet_Quartz_Dislocation_Paterson_and_Luan_1990
-lc.viscosity         = rh.Dry_Mafic_Granulite_Dislocation_Wang_et_al_2012
+lc.viscosity         = rh.Dry_Mafic_Granulite_Dislocation_Wang_et_al_2012 #* 1e-1
 mantle.viscosity     = rh.Wet_Olivine_Dislocation_Hirth_and_Kohlstedt_2003
 uc_markers.viscosity = uc.viscosity
 astheno.viscosity     = mantle.viscosity
  
 
 pl = GEO.PlasticityRegistry()
-uc.plasticity = pl.Rey_and_Muller_2010_UpperCrust
-uc.plasticity.frictionCoefficient = 0.12
-uc.plasticity.frictionAfterSoftening = 0.02
+uc.plasticity         = pl.Rey_and_Muller_2010_UpperCrust
+uc.plasticity.frictionCoefficient = 0.55
+uc.plasticity.frictionAfterSoftening = 0.055
 uc_markers.plasticity = uc.plasticity
-sediment.plasticity   = pl.Rey_et_al_2014_UpperCrust
+sediment.plasticity   = uc.plasticity
 lc.plasticity         = pl.Rey_et_al_2014_LowerCrust
 mantle.plasticity     = pl.Rey_et_al_2014_LithosphericMantle
 astheno.plasticity    = mantle.plasticity
@@ -300,13 +302,13 @@ Initial conditions
 def gaussian(xx, centre, width):
     return ( numpy.exp( -(xx - centre)**2 / width ))
 
-maxDamage = 0.5
+maxDamage = 0.25
 Model.plasticStrain.data[:] = maxDamage * numpy.random.rand(*Model.plasticStrain.data.shape[:])
 Model.plasticStrain.data[:,0] *= gaussian(Model.swarm.particleCoordinates.data[:,0], 0., GEO.nd(5.0 * u.kilometer))
 Model.plasticStrain.data[:,0] *= gaussian(Model.swarm.particleCoordinates.data[:,1], GEO.nd(-20. * u.kilometer) , GEO.nd(5.0 * u.kilometer))
 
 crust_mask =Model.swarm.particleCoordinates.data[:,1] <= GEO.nd(-40 * u.kilometer)
-Model.plasticStrain.data[crust_mask] = 0.0
+#Model.plasticStrain.data[crust_mask] = 0.0
 """
   Random damage
 ====================================
@@ -438,7 +440,7 @@ solver.set_penalty(0)
 
 #Model.solve()
 #Model.run_for(10.0e6* u.year, dt=10e3 * u.year, checkpoint_interval=100e3*u.years)
-Model.run_for(total_time, restartStep=-1, checkpoint_interval=100e3*u.years)
+Model.run_for(total_time, restartStep=-1, checkpoint_interval=checkpoint_interval)
 
 
 
