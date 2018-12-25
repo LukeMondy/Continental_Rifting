@@ -307,8 +307,10 @@ Model.plasticStrain.data[:] = maxDamage * numpy.random.rand(*Model.plasticStrain
 Model.plasticStrain.data[:,0] *= gaussian(Model.swarm.particleCoordinates.data[:,0], 0., GEO.nd(5.0 * u.kilometer))
 Model.plasticStrain.data[:,0] *= gaussian(Model.swarm.particleCoordinates.data[:,1], GEO.nd(-20. * u.kilometer) , GEO.nd(5.0 * u.kilometer))
 
-crust_mask =Model.swarm.particleCoordinates.data[:,1] <= GEO.nd(-40 * u.kilometer)
-#Model.plasticStrain.data[crust_mask] = 0.0
+noncrust_mask =Model.swarm.particleCoordinates.data[:,1] <= GEO.nd(-40 * u.kilometer)
+
+# This line sets the damage below the crust all to be zero
+Model.plasticStrain.data[noncrust_mask] = 0.0
 """
   Random damage
 ====================================
