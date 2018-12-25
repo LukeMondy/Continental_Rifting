@@ -422,7 +422,8 @@ Boundary conditions
 ====================================
 """
 
-GEO.rcParams["default.outputs"].append("meltField")
+GEO.rcParams["default.outputs"].append("projMeltField")
+GEO.rcParams["default.outputs"].append("projStressTensor")
 print(GEO.rcParams["default.outputs"])
 
 
