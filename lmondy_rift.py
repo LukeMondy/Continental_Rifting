@@ -21,7 +21,8 @@ def setup_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--res_scale", action='store', default = 1.)
     parser.add_argument("--total_vel", action="store", required = True)
-    parser.add_argument("--time_to_stop", action="store", required = True)
+    #parser.add_argument("--time_to_stop", action="store", default = -1.)
+    parser.add_argument("--gap_to_stop_sedi", action="store", required = True)
     parser.add_argument("--total_time", action="store", required = True)
     parser.add_argument("--name", action="store", required = True)
 
@@ -46,11 +47,12 @@ GEO.rcParams["popcontrol.particles.per.cell.2D"] = 60
 
 parser = vars(setup_args())
 
-res_scale =    float(parser['res_scale'])
-total_vel =    float(parser["total_vel"]) * u.cm / u.year
-time_to_stop = float(parser["time_to_stop"]) * 1e6 * u.year
-total_time =   float(parser["total_time"]) * 1e6 * u.year
-name =               parser['name']
+res_scale =        float(parser['res_scale'])
+total_vel =        float(parser["total_vel"]) * u.cm / u.year
+#time_to_stop =     float(parser["time_to_stop"]) * 1e6 * u.year
+gap_to_stop_sedi = float(parser["gap_to_stop_sedi"]) * u.km
+total_time =       float(parser["total_time"]) * 1e6 * u.year
+name =                   parser['name']
 
 default_resolution = (608,192)
 resolution = tuple(map(lambda x: int(x * res_scale), default_resolution))
@@ -58,12 +60,12 @@ resolution = tuple(map(lambda x: int(x * res_scale), default_resolution))
 default_checkpoint = 200e3 * u.years
 checkpoint_interval = default_checkpoint / total_vel.magnitude
 
-output_dir = "lmr_res{}x{}_{}_totalvel-{}_timeST_{}_{}".format(
+output_dir = "lmr_res{}x{}_{}_totalvel-{}_gap_{}_{}".format(
         resolution[0], 
         resolution[1], 
         name,
         total_vel.magnitude,
-        time_to_stop.magnitude,
+        gap_to_stop_sedi.magnitude,
         total_time.magnitude)
 
 
@@ -268,7 +270,7 @@ Partial melting
 Passive tracers
 """
 
-x = numpy.linspace(Model.minCoord[0], Model.maxCoord[0], 4800) * u.kilometer
+x = numpy.linspace(Model.minCoord[0], Model.maxCoord[0], 601) * u.kilometer
 y = -40. * u.kilometer
 
 moho_tracers = Model.add_passive_tracers(name="Moho", vertices=[x,y])
@@ -398,22 +400,21 @@ def post_hook():
     Model.plasticStrain.data[:] = Model.plasticStrain.data[:] * fact.evaluate(Model.swarm)
 
     """
-    Check timing for when sedimentation should turn off
+    Check spacing for when sedimentation should turn off
     """
-    if Model.time > time_to_stop:
+    # find the biggest gap in the X direction in the moho_tracers
+    diff = numpy.max(numpy.diff(numpy.sort(moho_tracers.swarm.particleCoordinates.data[:,0])))  # not sure if parallel safe
+    biggest_gap = GEO.Dimensionalize(diff, u.km)
+    print("Biggest gap in tracers", biggest_gap)
+
+    if biggest_gap > gap_to_stop_sedi:
+        print("Sedimentation turned: OFF")
         threshold = -10 * u.kilometers
-        velocity = 0. * u.centimetre / u.year
     else:
+        print("Sedimentation turned: ON")
         threshold = -1 * u.kilometers
-        velocity = total_vel / 2.
 
     Model.surfaceProcesses = GEO.surfaceProcesses.SedimentationThreshold(air=[air], sediment=[sediment], threshold=threshold)
-
-    Model.set_velocityBCs(
-                          left  = [-1 * velocity, 0. * u.centimetre / u.year], 
-                          right = [velocity,      0. * u.centimetre / u.year], 
-                          top   = [None,          0. * u.centimetre / u.year],
-                          )
 
 
 Model.postSolveHook = post_hook
