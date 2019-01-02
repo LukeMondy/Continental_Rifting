@@ -444,17 +444,6 @@ GEO.rcParams["default.outputs"].append("projStressTensor")
 
 # This is a bunch of solver options. You can try playing with them, but these should be good enough.
 solver = Model.solver
-solver.options.A11.ksp_rtol=1e-8
-solver.options.scr.ksp_rtol=1e-8
-solver.options.rhsA11.ksp_rtol=1e-8
-solver.options.backsolveA11.ksp_rtol=1e-8
-solver.options.scr.use_previous_guess = True
-solver.options.scr.ksp_set_min_it_converge = 10
-solver.options.scr.ksp_type = "cg"
-solver.options.main.remove_constant_pressure_null_space=True
-#Model.solver.options.main.Q22_pc_type='uwscale'
-solver.set_penalty(0)
-
 
 # Decide whether to use mumps or multigrid
 if resolution[0] * resolution[1] < 1e6:
@@ -467,6 +456,20 @@ else:
     solver.options.A11.mg_coarse_pc_type = "lu"
     solver.options.A11.mg_coarse_ksp_type = "preonly"
     #solver.options.A11.mg_coarse_ksp_view = ""
+
+solver.options.A11.ksp_rtol=1e-8
+solver.options.A11.ksp_set_min_it_converge = 10
+solver.options.A11.use_previous_guess = True
+solver.options.scr.ksp_rtol=1e-6
+solver.options.scr.use_previous_guess = True
+solver.options.scr.ksp_set_min_it_converge = 10
+solver.options.scr.ksp_type = "cg"
+
+#solver.options.main.help = ""
+solver.options.main.remove_constant_pressure_null_space=True
+#solver.options.main.Q22_pc_type = "uwscale"
+solver.set_penalty(0)
+
 
 
 #Model.solve()
