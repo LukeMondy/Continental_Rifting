@@ -434,17 +434,33 @@ print(GEO.rcParams["default.outputs"])
 solver = Model.solver
 solver.options.A11.ksp_rtol=1e-8
 solver.options.scr.ksp_rtol=1e-8
+solver.options.rhsA11.ksp_rtol=1e-8
+solver.options.backsolveA11.ksp_rtol=1e-8
 solver.options.scr.use_previous_guess = True
 solver.options.scr.ksp_set_min_it_converge = 10
 solver.options.scr.ksp_type = "cg"
 solver.options.main.remove_constant_pressure_null_space=True
-solver.set_inner_method("mumps")
-solver.set_penalty(0)
 #Model.solver.options.main.Q22_pc_type='uwscale'
+solver.set_penalty(0)
+
+
+# Decide whether to use mumps or multigrid
+if resolution[0] * resolution[1] < 1e6:
+    print("Using mumps")
+    solver.set_inner_method("mumps")
+else:
+    print("Using multigrid with coarse mumps")
+    #solver.options.mg.levels = 4
+    solver.options.A11.mg_coarse_pc_factor_mat_solver_package = "mumps"
+    solver.options.A11.mg_coarse_pc_type = "lu"
+    solver.options.A11.mg_coarse_ksp_type = "preonly"
+    #solver.options.A11.mg_coarse_ksp_view = ""
+
 
 #Model.solve()
 #Model.run_for(10.0e6* u.year, dt=10e3 * u.year, checkpoint_interval=100e3*u.years)
-Model.run_for(total_time, restartStep=-1, checkpoint_interval=checkpoint_interval)
+#Model.run_for(total_time, restartStep=-1, checkpoint_interval=checkpoint_interval)
+Model.run_for(total_time, checkpoint_interval=checkpoint_interval)
 
 
 
