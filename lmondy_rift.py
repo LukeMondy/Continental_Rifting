@@ -106,8 +106,8 @@ uc_shape          = GEO.shapes.Layer2D(top = 0.0 * u.kilometer, bottom = -20*u.k
 uc_markers_shape  = GEO.shapes.Layer2D(top = -5.*u.kilometer,   bottom = -10*u.kilometer)
 #lc_shape         = GEO.shapes.MultiShape([GEO.shapes.Layer2D(top=-20*u.km, bottom=-40*u.kilometer), GEO.shapes.Box(minX=-5.*u.kilometer, maxX=5. * u.kilometer, top=-40*u.kilometer, bottom=-40*u.kilometer-10.*u.kilometer)])
 lc_shape          = GEO.shapes.Layer2D(top=-20*u.kilometer,     bottom=-40*u.kilometer)
-mantle_shape      = GEO.shapes.Layer2D(top=-40*u.kilometer,     bottom=-160*u.kilometer)
-astheno_shape     = GEO.shapes.Layer2D(top=-160*u.kilometer,    bottom=Model.bottom)
+mantle_shape      = GEO.shapes.Layer2D(top=-40*u.kilometer,     bottom=-140*u.kilometer)
+astheno_shape     = GEO.shapes.Layer2D(top=-140*u.kilometer,    bottom=Model.bottom)
 
 crust_shape       =GEO.shapes.MultiShape([uc_shape, lc_shape]) 
 
@@ -134,8 +134,8 @@ mantle.density   = GEO.LinearDensity(reference_density=3370. * u.kilogram / u.me
 astheno.density   = mantle.density
 
 
-sediment.radiogenicHeatProd   = 1.4 * u.microwatt / u.meter**3
-uc.radiogenicHeatProd         = 1.4 * u.microwatt / u.meter**3
+sediment.radiogenicHeatProd   = 1.2 * u.microwatt / u.meter**3
+uc.radiogenicHeatProd         = 1.2 * u.microwatt / u.meter**3
 lc.radiogenicHeatProd         = 0.6 * u.microwatt / u.meter**3
 mantle.radiogenicHeatProd     = 0.02 * u.microwatt / u.meter**3
 uc_markers.radiogenicHeatProd = uc.radiogenicHeatProd
@@ -145,10 +145,10 @@ astheno.radiogenicHeatProd = mantle.radiogenicHeatProd
 rh = GEO.ViscousCreepRegistry()
 air.viscosity         = 1e18 * u.pascal * u.second
 sediment.viscosity    = rh.Wet_Quartz_Dislocation_Paterson_and_Luan_1990
-uc.viscosity         = rh.Wet_Quartz_Dislocation_Paterson_and_Luan_1990
-lc.viscosity         = rh.Dry_Mafic_Granulite_Dislocation_Wang_et_al_2012 #* 1e-1
-mantle.viscosity     = rh.Wet_Olivine_Dislocation_Hirth_and_Kohlstedt_2003
-uc_markers.viscosity = uc.viscosity
+uc.viscosity          = rh.Wet_Quartz_Dislocation_Paterson_and_Luan_1990
+lc.viscosity          = rh.Dry_Mafic_Granulite_Dislocation_Wang_et_al_2012
+mantle.viscosity      = rh.Wet_Olivine_Dislocation_Hirth_and_Kohlstedt_2003
+uc_markers.viscosity  = uc.viscosity
 astheno.viscosity     = mantle.viscosity
  
 
@@ -243,20 +243,20 @@ lc.add_melt_modifier(crust_solidus, crust_liquidus,
 mantle.add_melt_modifier(mantle_solidus, mantle_liquidus, 
                          latentHeatFusion=450.0 * u.kilojoules / u.kilogram / u.kelvin,
                          meltFraction=0.,
-                         meltFractionLimit=0.08,
+                         meltFractionLimit=0.02,
                          meltExpansion=0.0, 
                          viscosityChangeX1 = 0.00,
-                         viscosityChangeX2 = 0.08,
+                         viscosityChangeX2 = 0.02,
                          viscosityChange = -1.0e2
                         ) 
 
 astheno.add_melt_modifier(mantle_solidus, mantle_liquidus, 
                          latentHeatFusion=450.0 * u.kilojoules / u.kilogram / u.kelvin,
                          meltFraction=0.,
-                         meltFractionLimit=0.08,
+                         meltFractionLimit=0.02,
                          meltExpansion=0.0, 
                          viscosityChangeX1 = 0.00,
-                         viscosityChangeX2 = 0.08,
+                         viscosityChangeX2 = 0.02,
                          viscosityChange = -1.0e2
                         ) 
 """
@@ -270,7 +270,9 @@ Partial melting
 Passive tracers
 """
 
-x = numpy.linspace(Model.minCoord[0], Model.maxCoord[0], 601) * u.kilometer
+# Put a single passive tracer per element. The model will check if they get 
+# spaced out (see the post_hook function).
+x = numpy.linspace(Model.minCoord[0], Model.maxCoord[0], resolution[0]+1) * u.kilometer
 y = -40. * u.kilometer
 
 moho_tracers = Model.add_passive_tracers(name="Moho", vertices=[x,y])
@@ -304,15 +306,21 @@ Initial conditions
 def gaussian(xx, centre, width):
     return ( numpy.exp( -(xx - centre)**2 / width ))
 
-maxDamage = 0.25
+maxDamage = 0.2
+centre = (GEO.nd(0. * u.kilometer), GEO.nd(-20. * u.kilometer))
+width = GEO.nd(5. * u.kilometer)  # this gives a normal distribution
+                                  # from about -100 km to 100 km
+
 Model.plasticStrain.data[:] = maxDamage * numpy.random.rand(*Model.plasticStrain.data.shape[:])
-Model.plasticStrain.data[:,0] *= gaussian(Model.swarm.particleCoordinates.data[:,0], 0., GEO.nd(5.0 * u.kilometer))
-Model.plasticStrain.data[:,0] *= gaussian(Model.swarm.particleCoordinates.data[:,1], GEO.nd(-20. * u.kilometer) , GEO.nd(5.0 * u.kilometer))
+Model.plasticStrain.data[:,0] *= gaussian(Model.swarm.particleCoordinates.data[:,0], centre[0], width)
+Model.plasticStrain.data[:,0] *= gaussian(Model.swarm.particleCoordinates.data[:,1], centre[1], width*100)
 
-noncrust_mask =Model.swarm.particleCoordinates.data[:,1] <= GEO.nd(-40 * u.kilometer)
+# The following lines make the random damage only apply to the crust
+noncrust_mask = Model.swarm.particleCoordinates.data[:,1] <= GEO.nd(-40 * u.kilometer)
+air_mask = Model.swarm.particleCoordinates.data[:,1] > GEO.nd(0 * u.kilometer)
 
-# This line sets the damage below the crust all to be zero
 Model.plasticStrain.data[noncrust_mask] = 0.0
+Model.plasticStrain.data[air_mask] = 0.0
 """
   Random damage
 ====================================
@@ -320,8 +328,8 @@ Model.plasticStrain.data[noncrust_mask] = 0.0
 
 # Temp initial conditions
 Model.set_temperatureBCs(top=293.15 * u.degK, 
-                         bottom=1603.15 * u.degK, 
-                         nodeSets = [(air_shape, 293.15 * u.degK), (astheno_shape, 1603.15 * u.degK)])
+                         bottom=1623.15 * u.degK, 
+                         nodeSets = [(air_shape, 293.15 * u.degK), (astheno_shape, 1623.15 * u.degK)])
 
 # We need to initialise the model first for two reasons:
 # 1: we need to calculate the steady-state geotherm, based on the above initial conditions
@@ -338,7 +346,7 @@ Boundary conditions
 """
 # Reset the temp boundary conditions to be something we want during the geodynamics
 Model.set_temperatureBCs(top=293.15 * u.degK, 
-                         bottom=1603.15 * u.degK)
+                         bottom=1623.15 * u.degK)
 
 
 # Making the air compressible means that its volume can change.
@@ -357,6 +365,7 @@ P, bottomPress = Model.get_lithostatic_pressureField()
 bottomPress = GEO.Dimensionalize(numpy.average(bottomPress), u.megapascal).magnitude
 print("Initially calculated bottom pressure:", bottomPress)
 
+"""
 # Restarting models with pressure boundary conditions can be a bit dangerous. To avoid this,
 # we write out the bottom pressure to a file. When the model restarts, we check the file, and 
 # use the pressure it has, instead of calculating our own.
@@ -378,16 +387,20 @@ else:
 # since only 1 CPU got the file, send it out to all CPUs
 bottomPress = MPI.COMM_WORLD.bcast(bottomPress, root=0)
 uw.barrier()  # wait for them to catchup
+"""
+# until restarts with basal pressure BCs is fixed, removing all this
 bottomPress = bottomPress * u.megapascal  # then make it a unit
 
 
 Model.set_velocityBCs(
                       left  = [total_vel * -0.5, 0. * u.centimetre / u.year], 
                       right = [total_vel * 0.5,  0. * u.centimetre / u.year], 
-                      top   = [None,                         0. * u.centimetre / u.year],
+                      top   = [None,             0. * u.centimetre / u.year],
                       )
 
-Model.set_stressBCs(bottom=[0., bottomPress])
+Model.set_stressBCs(
+        bottom = [0., bottomPress],
+        )
 
 
 def post_hook():
@@ -427,7 +440,6 @@ Boundary conditions
 
 GEO.rcParams["default.outputs"].append("projMeltField")
 GEO.rcParams["default.outputs"].append("projStressTensor")
-print(GEO.rcParams["default.outputs"])
 
 
 # This is a bunch of solver options. You can try playing with them, but these should be good enough.
