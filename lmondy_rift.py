@@ -33,7 +33,7 @@ u = GEO.UnitRegistry
 GEO.rcParams["initial.nonlinear.tolerance"] = 1e-3
 GEO.rcParams["nonlinear.tolerance"] =         1e-3
 GEO.rcParams["nonlinear.min.iterations"] = 1
-GEO.rcParams["CFL"] = 0.25
+GEO.rcParams["CFL"] = 0.1
 #GEO.rcParams["CFL"] = 0.5
 
 GEO.rcParams["advection.diffusion.method"] = "SLCN"
@@ -272,7 +272,7 @@ Passive tracers
 
 # Put a single passive tracer per element. The model will check if they get 
 # spaced out (see the post_hook function).
-x = numpy.linspace(Model.minCoord[0], Model.maxCoord[0], resolution[0]+1) * u.kilometer
+x = numpy.linspace(Model.minCoord[0], Model.maxCoord[0], resolution[0]) * u.kilometer
 y = -40. * u.kilometer
 
 moho_tracers = Model.add_passive_tracers(name="Moho", vertices=[x,y])
@@ -414,11 +414,38 @@ def post_hook():
 
     """
     Check spacing for when sedimentation should turn off
+    # This solution was provided by: https://stackoverflow.com/a/38008452
     """
-    # find the biggest gap in the X direction in the moho_tracers
-    diff = numpy.max(numpy.diff(numpy.sort(moho_tracers.swarm.particleCoordinates.data[:,0])))  # not sure if parallel safe
+    rank = uw.rank()
+    root = 0
+
+    # get all the moho tracers that are on our CPU, in x sorted order
+    local_array = numpy.sort(moho_tracers.swarm.particleCoordinates.data[:,0])
+    sendbuf = numpy.array(local_array)
+
+    # We have to figure out how many particles each CPU has, and let the root
+    # cpu know
+    sendcounts = numpy.array(MPI.COMM_WORLD.gather(len(sendbuf), root))
+
+    if rank == root:
+        # prepare to receive all this data
+        recvbuf = numpy.empty(sum(sendcounts), dtype=float)
+    else:
+        recvbuf = None
+
+    # Gather up all the data and put it in recvbuf
+    MPI.COMM_WORLD.Gatherv(sendbuf=sendbuf, recvbuf=(recvbuf, sendcounts), root=root)
+    if rank == root:
+        # find the biggest gap in the X direction in the moho_tracers
+        diff = numpy.max(numpy.diff(numpy.sort(recvbuf)))  # recvbuf is the array of all particles
+    else:
+        diff = None
+
+    # Now that we know the biggest gap, tell all the other CPUs
+    diff = MPI.COMM_WORLD.bcast(diff, root=0)
     biggest_gap = GEO.Dimensionalize(diff, u.km)
-    print("Biggest gap in tracers", biggest_gap)
+    uw.barrier()
+    print(uw.rank(), "Biggest gap in tracers", biggest_gap)
 
     if biggest_gap > gap_to_stop_sedi:
         print("Sedimentation turned: OFF")
