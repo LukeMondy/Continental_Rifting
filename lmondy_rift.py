@@ -31,7 +31,7 @@ def setup_args():
 
 u = GEO.UnitRegistry
 GEO.rcParams["initial.nonlinear.tolerance"] = 1e-3
-GEO.rcParams["nonlinear.tolerance"] =         1e-3
+GEO.rcParams["nonlinear.tolerance"] =         5e-4
 GEO.rcParams["nonlinear.min.iterations"] = 1
 GEO.rcParams["CFL"] = 0.1
 #GEO.rcParams["CFL"] = 0.5
@@ -54,7 +54,7 @@ gap_to_stop_sedi = float(parser["gap_to_stop_sedi"]) * u.km
 total_time =       float(parser["total_time"]) * 1e6 * u.year
 name =                   parser['name']
 
-default_resolution = (608,192)
+default_resolution = (608,224)
 resolution = tuple(map(lambda x: int(x * res_scale), default_resolution))
 
 default_checkpoint = 200e3 * u.years
@@ -73,11 +73,11 @@ output_dir = "lmr_res{}x{}_{}_totalvel-{}_gap_{}_{}".format(
 # Characteristic values of the system
 half_rate = 1. * u.centimeter / u.year
 model_length = 600e3 * u.meter
-model_height = 200e3 * u.meter
+model_height = 220e3 * u.meter
 refViscosity = 1e21 * u.pascal * u.second
 surfaceTemp = 273.15 * u.degK
 baseModelTemp = 1603.15 * u.degK
-bodyforce = 3200 * u.kilogram / u.metre**3 * 9.81 * u.meter / u.second**2
+bodyforce = 3150 * u.kilogram / u.metre**3 * 9.81 * u.meter / u.second**2
 
 KL = model_length
 Kt = KL / half_rate
@@ -91,7 +91,7 @@ GEO.scaling_coefficients["[temperature]"] = KT
 
 
 Model = GEO.Model(elementRes=resolution,
-                  minCoord=(-300 * u.kilometer, -180 * u.kilometer),
+                  minCoord=(-300 * u.kilometer, -200 * u.kilometer),
                   maxCoord=( 300 * u.kilometer,  20 * u.kilometer),
                   gravity = (0., -9.81 * u.m / u.s**2),
                   outputDir = output_dir)
@@ -496,6 +496,7 @@ solver.options.scr.ksp_type = "cg"
 solver.options.main.remove_constant_pressure_null_space=True
 #solver.options.main.Q22_pc_type = "uwscale"
 solver.set_penalty(0)
+Model.solver = solver
 
 
 
