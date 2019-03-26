@@ -32,7 +32,9 @@ def setup_args():
 u = GEO.UnitRegistry
 GEO.rcParams["initial.nonlinear.tolerance"] = 1e-3
 GEO.rcParams["nonlinear.tolerance"] =         5e-4
+#GEO.rcParams["nonlinear.tolerance"] =         1e-3
 GEO.rcParams["nonlinear.min.iterations"] = 1
+GEO.rcParams["nonlinear.max.iterations"] = 100
 GEO.rcParams["CFL"] = 0.1
 #GEO.rcParams["CFL"] = 0.5
 
@@ -104,8 +106,8 @@ Model.capacity    = 1000. * u.joule / (u.kelvin * u.kilogram)  # From:
 air_shape         = GEO.shapes.Layer2D(top = Model.top,         bottom = 0.0)
 uc_shape          = GEO.shapes.Layer2D(top = 0.0 * u.kilometer, bottom = -20*u.kilometer)
 uc_markers_shape  = GEO.shapes.Layer2D(top = -5.*u.kilometer,   bottom = -10*u.kilometer)
-#lc_shape         = GEO.shapes.MultiShape([GEO.shapes.Layer2D(top=-20*u.km, bottom=-40*u.kilometer), GEO.shapes.Box(minX=-5.*u.kilometer, maxX=5. * u.kilometer, top=-40*u.kilometer, bottom=-40*u.kilometer-10.*u.kilometer)])
-lc_shape          = GEO.shapes.Layer2D(top=-20*u.kilometer,     bottom=-40*u.kilometer)
+lc_shape         = GEO.shapes.MultiShape([GEO.shapes.Layer2D(top=-20*u.km, bottom=-40*u.kilometer), GEO.shapes.Box(minX=-5.*u.kilometer, maxX=5. * u.kilometer, top=-40*u.kilometer, bottom=-42*u.kilometer)])
+#lc_shape          = GEO.shapes.Layer2D(top=-20*u.kilometer,     bottom=-40*u.kilometer)
 mantle_shape      = GEO.shapes.Layer2D(top=-40*u.kilometer,     bottom=-140*u.kilometer)
 astheno_shape     = GEO.shapes.Layer2D(top=-140*u.kilometer,    bottom=Model.bottom)
 
@@ -270,9 +272,9 @@ Partial melting
 Passive tracers
 """
 
-# Put a single passive tracer per element. The model will check if they get 
+# Put a single passive tracer per every 2 element. The model will check if they get 
 # spaced out (see the post_hook function).
-x = numpy.linspace(Model.minCoord[0], Model.maxCoord[0], resolution[0]) * u.kilometer
+x = numpy.linspace(Model.minCoord[0], Model.maxCoord[0], resolution[0]/2) * u.kilometer
 y = -40. * u.kilometer
 
 moho_tracers = Model.add_passive_tracers(name="Moho", vertices=[x,y])
@@ -346,7 +348,8 @@ Boundary conditions
 """
 # Reset the temp boundary conditions to be something we want during the geodynamics
 Model.set_temperatureBCs(top=293.15 * u.degK, 
-                         bottom=1623.15 * u.degK)
+                         bottom=1623.15 * u.degK,
+                         nodeSets = [(air_shape, 293.15 * u.degK),])
 
 
 # Making the air compressible means that its volume can change.
@@ -365,7 +368,6 @@ P, bottomPress = Model.get_lithostatic_pressureField()
 bottomPress = GEO.Dimensionalize(numpy.average(bottomPress), u.megapascal).magnitude
 print("Initially calculated bottom pressure:", bottomPress)
 
-"""
 # Restarting models with pressure boundary conditions can be a bit dangerous. To avoid this,
 # we write out the bottom pressure to a file. When the model restarts, we check the file, and 
 # use the pressure it has, instead of calculating our own.
@@ -387,8 +389,7 @@ else:
 # since only 1 CPU got the file, send it out to all CPUs
 bottomPress = MPI.COMM_WORLD.bcast(bottomPress, root=0)
 uw.barrier()  # wait for them to catchup
-"""
-# until restarts with basal pressure BCs is fixed, removing all this
+
 bottomPress = bottomPress * u.megapascal  # then make it a unit
 
 
@@ -401,7 +402,6 @@ Model.set_velocityBCs(
 Model.set_stressBCs(
         bottom = [0., bottomPress],
         )
-
 
 def post_hook():
     """
@@ -420,6 +420,7 @@ def post_hook():
     root = 0
 
     # get all the moho tracers that are on our CPU, in x sorted order
+    moho_tracers = Model.passive_tracers["Moho"]  # Need this for restart safety
     local_array = numpy.sort(moho_tracers.swarm.particleCoordinates.data[:,0])
     sendbuf = numpy.array(local_array)
 
@@ -448,7 +449,7 @@ def post_hook():
     print(uw.rank(), "Biggest gap in tracers", biggest_gap)
 
     if biggest_gap > gap_to_stop_sedi:
-        print("Sedimentation turned: OFF")
+        print("Sedimentation turned: OFF at {}".format(Model.time))
         threshold = -10 * u.kilometers
     else:
         print("Sedimentation turned: ON")
@@ -496,14 +497,14 @@ solver.options.scr.ksp_type = "cg"
 solver.options.main.remove_constant_pressure_null_space=True
 #solver.options.main.Q22_pc_type = "uwscale"
 solver.set_penalty(0)
-Model.solver = solver
+#Model.solver = solver
 
 
 
 #Model.solve()
 #Model.run_for(10.0e6* u.year, dt=10e3 * u.year, checkpoint_interval=100e3*u.years)
 #Model.run_for(total_time, restartStep=-1, checkpoint_interval=checkpoint_interval)
-Model.run_for(total_time, checkpoint_interval=checkpoint_interval)
+Model.run_for(total_time, restartStep=-1, checkpoint_interval=checkpoint_interval)
 
 
 
